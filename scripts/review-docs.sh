@@ -99,6 +99,7 @@ review_file() {
     local heading_levels=()
     local first_heading_found=false
     local h1_count=0
+    local in_list=false
 
     # Read file line by line
     local line_num=0
@@ -202,6 +203,38 @@ review_file() {
            [[ ! "$line" =~ ^: ]] && [[ ! "$line" =~ ^= ]]; then
             print_warn "line $((line_num-1)): Section heading not followed by blank line"
             warnings=$((warnings + 1))
+        fi
+
+        # Track list context: blank lines end list context;
+        # description list terms (term::) enter list context
+        if [[ -z "$line" ]] || [[ "$line" =~ ^[[:space:]]*$ ]]; then
+            in_list=false
+        elif [[ "$line" =~ ^[[:space:]]*[a-zA-Z].*::$ ]]; then
+            in_list=true
+        fi
+
+        # Check for list item not preceded by blank line (malformed list)
+        # In AsciiDoc, a list must be separated from preceding paragraph
+        # text by a blank line, otherwise it renders as plain text.
+        # Only flag the *first* list item after prose -- subsequent items
+        # within an active list context (including wrapped paragraph lines)
+        # are fine.
+        if [[ "$line" =~ ^[[:space:]]*([\*]+|[\-]|\.+)[[:space:]]+ ]]; then
+            if [[ "$in_list" == "false" ]] && \
+               [[ -n "$prev_line" ]] && \
+               [[ ! "$prev_line" =~ ^[[:space:]]*$ ]] && \
+               [[ ! "$prev_line" =~ ^=+[[:space:]] ]] && \
+               [[ ! "$prev_line" =~ ^:[a-zA-Z] ]] && \
+               [[ ! "$prev_line" =~ ^-{4,}$ ]] && \
+               [[ ! "$prev_line" =~ ^\.{4,}$ ]] && \
+               [[ ! "$prev_line" =~ ^={4,}$ ]] && \
+               [[ ! "$prev_line" =~ ^\[.+\]$ ]] && \
+               [[ ! "$prev_line" =~ ^\+[[:space:]]*$ ]] && \
+               [[ ! "$prev_line" =~ ^\.[^[:space:]] ]]; then
+                print_warn "line $line_num: List item not preceded by blank line (will not render as a list)"
+                warnings=$((warnings + 1))
+            fi
+            in_list=true
         fi
 
         # Check for trailing whitespace
